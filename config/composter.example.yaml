@@ -1,0 +1,61 @@
+# Composter configuration. One file, no environment variables.
+#
+# NOTE: automation is NOT yet pointed at the real vault. Before running
+# `init` against vault.root, complete Phase 0 (confirm which vault Obsidian
+# Sync is bound to) and capture the isolation baseline.
+
+vault:
+  root: ~/Desktop/main            # your Obsidian vault
+  managed_dir: zCompost
+  # Must match the contents of zCompost/.composter-vault-id exactly.
+  # The writer refuses to construct on any mismatch.
+  vault_id: change-me            # any stable string; must match the sentinel file
+
+state_dir: state
+
+writer:
+  # Circuit breaker: a mass-orphan event (e.g. Apple Notes re-issuing every
+  # ID) becomes an alarm instead of hundreds of duplicate files.
+  max_new_per_run: 50
+  # conflict | graduate — what to do when the fenced region was edited
+  # locally AND upstream changed. Flip to `graduate` if `resolve` fires
+  # more than monthly (plan §7.3).
+  on_local_edit: conflict
+  # "Marker missing" must persist this long before it means "deleted":
+  # both conditions required, so a sync lag is never read as a deletion.
+  dismiss_after_runs: 3
+  dismiss_after_seconds: 3600
+  # Anything heavier than this goes to media_dir, referenced not embedded.
+  max_inline_mb: 25
+
+media_dir: ~/Media/composter
+
+isolation:
+  # Paths (vault-relative prefixes) excluded from the isolation baseline.
+  # Composter's containment assertions already forbid writing anywhere
+  # outside zCompost/ including these; they are excluded from the *baseline
+  # diff* only because Obsidian itself churns them (workspace state, plugin
+  # caches), which would make the alarm fire on noise and train you to
+  # ignore it.
+  exclude:
+    - .obsidian/
+    - .trash/
+    - .smart-env/
+
+sources:
+  fixture:
+    enabled: false
+    path: tests/fixtures/fixture_captures.yaml
+  notes:
+    enabled: true
+    quiet_seconds: 120
+    # Folders that never enter the compost ("Recently Deleted" is always
+    # excluded on top of these). Quick Notes is the trash-not-compost
+    # channel: jot disposables there via Control Center.
+    exclude_folders:
+      - Quick Notes
+  voice:
+    enabled: false
+    max_minutes_per_run: 30
+  ios:
+    enabled: false

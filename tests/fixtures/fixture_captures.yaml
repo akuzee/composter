@@ -1,0 +1,20 @@
+# Sample synthetic captures for exercising the spine by hand:
+#   enable sources.fixture in config, then `pull --source fixture --dry-run`
+- id: fx-sample-001
+  title: composting metaphor
+  created: 2026-08-09T14:32:11-04:00
+  body: |
+    Tracking my inner life for the purpose of composting it.
+
+    Good scraps, not completeness.
+- id: fx-sample-002
+  title: eight second loop
+  created: 2026-08-08T21:10:00-04:00
+  kind: snippet
+  body: |
+    The unit of work is the smallest complete thing.
+- id: fx-sample-003
+  title: locked note
+  created: 2026-08-07T09:00:00-04:00
+  skip: locked
+  body: ""

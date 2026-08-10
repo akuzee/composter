@@ -1,0 +1,15 @@
+# Everything derived from, or containing, the personal corpus.
+# state/ holds the ledger, note dumps, triage verdicts, and the review page —
+# i.e. the text of every note. It must never be committed.
+state/
+samples/
+
+# The live config names a real vault and real folder names.
+# config/composter.example.yaml is the tracked template.
+config/composter.yaml
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
