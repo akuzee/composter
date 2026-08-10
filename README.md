@@ -17,32 +17,111 @@ and the standing isolation baseline test).
 ```sh
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements-dev.txt
-./.venv/bin/python -m pytest tests/        # 26 tests, all against temp vaults
+./.venv/bin/python -m pytest tests/        # 88 tests, all against temp vaults
+cp config/composter.example.yaml config/composter.yaml   # then edit vault.root
 ```
 
-## Before pointing at the real vault (Phase 0)
+Use the **python.org framework build** for the venv, not Homebrew's. Homebrew's
+`python3` symlinks into a version-stamped Cellar path that changes on every
+patch bump, which silently invalidates any Full Disk Access grant.
+
+## Before pointing at the real vault
 
 1. Confirm which local folder Obsidian Sync is actually bound to
-   (Settings → Sync). Two vaults are registered on this machine.
+   (Settings → Sync). More than one vault may be registered.
 2. `python -m src.main doctor` — fix any ✗.
 3. `python -m src.main init` — creates `zCompost/` + sentinel, captures the
-   isolation baseline **while the vault is pristine**.
-4. Create the kitchen-sink note in Apple Notes (every construct, including a
-   checklist with one item checked), snapshot its HTML into
-   `tests/fixtures/notes_kitchen_sink.html` — the snapshot test in
-   `tests/test_htmlmd.py` activates automatically once the file exists.
+   isolation baseline **while the vault is pristine**. Capturing it afterwards
+   is worthless.
+4. `pull --source notes --limit 5 --dry-run`, then drop `--dry-run`.
+
+## Permissions
+
+Two separate macOS grants, and they are not interchangeable.
+
+### Automation consent — Apple Notes only
+
+Nothing to configure. The first Apple Events call raises a dialog; click Allow.
+Repair at System Settings → Privacy & Security → Automation. `doctor` reports it.
+
+### Full Disk Access — voice memos and the iOS inbox
+
+`VoiceMemos.app` has no scripting interface, so its recordings can only be read
+straight out of a TCC-protected group container. There is no way around the
+grant.
+
+**The thing that trips everyone up: TCC attributes file access to the process
+that was *launched*, not to whatever it runs.** Consequences:
+
+- Running any script **from a terminal** means the *terminal* needs the grant —
+  Terminal.app, iTerm, or Visual Studio Code, whichever you actually use. The
+  interpreter's own grant is irrelevant in that case.
+- Running the inner executable of an app bundle from a shell (
+  `Composter.app/Contents/MacOS/Composter`) is *still* the terminal's identity.
+  The bundle only becomes responsible when launched as an app, or by launchd.
+- Under **launchd**, the binary named in `ProgramArguments` is the responsible
+  process, so that binary needs the grant.
+
+So, in practice:
+
+```sh
+# 1. For manual runs: grant Full Disk Access to your terminal app, then
+~/Projects/composter/.venv/bin/python -m src.main doctor
+
+# 2. For the scheduled agent: the interpreter launchd runs needs it too.
+#    The picker refuses loose Unix executables, so DRAG it in from Finder:
+#    Finder -> Go -> Go to Folder (⌘⇧G) ->
+#      /Library/Frameworks/Python.framework/Versions/3.13/bin/
+#    then drag python3.13 onto the Full Disk Access list.
+```
+
+`scripts/build_app.py` builds `~/Applications/Composter.app`, a launcher whose
+purpose is to be a *stable* TCC identity that survives Python upgrades. It is
+staged for later rather than required now, and it comes with a real caveat:
+**ad-hoc signatures change on every rebuild, so every rebuild invalidates the
+grant** and the old entry must be removed and re-added. Check it with
+`~/Applications/Composter.app/Contents/MacOS/Composter selftest`, but remember
+that running it from a shell tests the *shell's* grant, not the bundle's.
 
 ## Sources
 
-- **apple-notes** (Phase 2, built): JXA two-phase fetch — 5-event index of the
-  whole library (~6 s for 3,073 notes), then bodies only for notes whose
-  modification date moved. Locked notes -> `skipped`; Recently Deleted never
-  imported; notes modified in the last `quiet_seconds` deferred; title-only
-  one-line jots import with an empty body (the title is the thought).
-  Change detection hashes upstream HTML, so converter tweaks never look like
-  edits. `--limit N` imports the N newest not-yet-imported notes, so repeated
-  limited pulls walk backward through the library in slices.
-- **voice / ios**: Phases 4–5, blocked on Full Disk Access.
+- **apple-notes** (Phase 2, built): JXA two-phase fetch — a 5-event index of
+  the whole library (~6 s for 3,000 notes), then bodies only for notes whose
+  modification date moved. Locked notes → `skipped`; Recently Deleted never
+  imported; notes modified within `quiet_seconds` deferred; title-only one-line
+  jots import with an empty body, because the title is the thought. Change
+  detection hashes upstream HTML, so converter tweaks never look like edits.
+  Upstream folders are mirrored. `--limit N` takes the N newest not-yet-imported
+  notes, so repeated limited pulls walk backward through the library in slices.
+
+  *Known fidelity losses, all in Apple's own API:* checklist checked-state,
+  numbered lists, blockquotes, and link titles (Notes emits no `<a href>` — URLs
+  arrive as underlined text and are unwrapped so Obsidian autolinks them).
+
+- **voice-memo** (Phase 4, built; needs Full Disk Access): reads the recordings
+  container, transcribes with ffmpeg + whisper.cpp on Metal, and writes a note
+  with the audio embedded as `![[…]]` so Obsidian renders an inline player.
+  Originals are only ever read.
+
+  Three independent gates guard against importing a partial file: mtime older
+  than 90 s, size stable across a 5 s window, and `ffprobe` returning a sane
+  duration — the last is the strongest, since a truncated or still-syncing
+  `.m4a` fails it. iCloud `.icloud` placeholders trigger `brctl download` and
+  are deferred. `max_minutes_per_run` stops one long recording blowing a run.
+  Voice memos are **write-once**, so the conflict machinery is dormant here.
+
+  Identity is `ZUNIQUEID` from `CloudRecordings.db` when that schema is
+  readable, falling back to `sha256(first 1 MiB) + filesize` otherwise —
+  filenames are never identity, since renaming a memo renames the file.
+
+  **Transcript quality is a product risk, not just an accuracy one.** `base.en`
+  ships because it is already on disk; on reflective, half-mumbled,
+  walking-around speech it can be bad enough to make the feature feel
+  worthless. Point `sources.voice.model` at `ggml-large-v3-turbo-q5_0.bin`
+  (~550 MB) if the first transcripts disappoint.
+
+- **ios** (Phase 5, not built): a `Compost` share-sheet shortcut writing JSON
+  plus files to an iCloud folder, swept by the Mac. Also needs Full Disk Access.
 
 ## Triage — deciding what is compost and what is trash
 

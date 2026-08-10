@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,7 +67,19 @@ def build_sources(cfg: Config) -> dict[str, Source]:
             exclude_folders=tuple(notes.options.get("exclude_folders", ["Quick Notes"])),
             exclude_ids=exclude_ids,
         )
-    # voice / ios join here in Phases 4/5.
+    voice = cfg.sources.get("voice")
+    if voice and voice.enabled:
+        from .sources.voice_memos import VoiceMemosSource
+        kw = {}
+        if voice.options.get("recordings_dir"):
+            kw["root"] = Path(str(voice.options["recordings_dir"])).expanduser()
+        if voice.options.get("model"):
+            kw["model"] = Path(str(voice.options["model"])).expanduser()
+        out["voice"] = VoiceMemosSource(
+            transcripts_dir=cfg.transcripts_dir,
+            max_minutes_per_run=int(voice.options.get("max_minutes_per_run", 30)),
+            **kw)
+    # ios joins here in Phase 5.
     return out
 
 
@@ -142,6 +155,36 @@ def _park_conflict(cfg: Config, cap: Capture, now: datetime, dry_run: bool) -> P
     return p
 
 
+def _materialize_media(cfg: Config, writer: VaultWriter, source: Source,
+                       cap: Capture) -> Capture:
+    """Copy a capture's media into the vault and embed it in the body.
+
+    Sources hand over absolute paths to files they found; only the writer may
+    put anything in the vault. Files over `max_inline_mb` are left out of the
+    vault entirely and referenced from `media_dir`, so sync weight stays sane.
+    """
+    if not cap.media:
+        return cap
+    limit = cfg.max_inline_mb * 1024 * 1024
+    vault_paths, external = [], []
+    for raw in cap.media:
+        p = Path(raw)
+        if not p.is_file():
+            continue
+        if p.stat().st_size > limit:
+            external.append(str(p))
+            continue
+        vault_paths.append(writer.attach_media(p, source.subfolder))
+
+    embeds = "\n".join(f"![[{v}]]" for v in vault_paths)
+    notes = "\n".join(
+        f"> [!info] Media kept outside the vault (over {cfg.max_inline_mb} MB): `{e}`"
+        for e in external)
+    header = "\n\n".join(x for x in (embeds, notes) if x)
+    body = f"{header}\n\n{cap.body}".strip() if header else cap.body
+    return replace(cap, body=body, media=tuple(vault_paths))
+
+
 def _apply_capture(cfg: Config, db: DB, writer: VaultWriter, source: Source,
                    cap: Capture, now: datetime, counts: dict, dry_run: bool,
                    upstream_ids: set[str]) -> str:
@@ -188,6 +231,7 @@ def _apply_capture(cfg: Config, db: DB, writer: VaultWriter, source: Source,
             counts["circuit_breaker"] = counts.get("circuit_breaker", 0) + 1
             return "circuit_breaker"
         captured_iso = iso(now)
+        cap = _materialize_media(cfg, writer, source, cap)
         result = writer.create(cap, captured_iso, source.subfolder)
         if not dry_run:
             if item is None:

@@ -131,16 +131,19 @@ def collect_checks(cfg: Config) -> list[tuple[str, bool | None, str]]:
     model = Path.home() / ".cache/whisper-models/ggml-base.en.bin"
     checks.append(("whisper model (Phase 4: voice)", None if model.is_file() else False,
                    str(model) if model.is_file() else f"{model} missing"))
-    fda_probe = Path.home() / "Library/Application Support/com.apple.TCC/TCC.db"
-    try:
-        with open(fda_probe, "rb"):
-            fda = True
-    except PermissionError:
-        fda = False
-    except OSError:
-        fda = None
-    checks.append(("Full Disk Access (Phases 4–5)", None if fda else False,
-                   "granted" if fda else "not granted — voice + iOS inbox blocked, Notes unaffected"))
+    # Probe what is actually needed — the Voice Memos container — rather than
+    # TCC.db, which is protected more strictly than the thing we want and so
+    # reports "blocked" even when voice capture would work fine.
+    from .sources.voice_memos import CONTAINER, container_readable
+    if container_readable():
+        checks.append(("Full Disk Access (Phases 4–5)", True,
+                       f"granted — {CONTAINER} is readable"))
+    else:
+        checks.append((
+            "Full Disk Access (Phases 4–5)", None,
+            f"cannot read {CONTAINER}. Grant Full Disk Access to "
+            f"~/Applications/Composter.app, then run doctor THROUGH it: "
+            f"~/Applications/Composter.app/Contents/MacOS/Composter doctor"))
 
     return checks
 

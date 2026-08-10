@@ -352,6 +352,28 @@ class VaultWriter:
         os.replace(self._contained(src), self._contained(dest))
         return self.relpath(dest)
 
+    def attach_media(self, src: Path, subfolder: str) -> str:
+        """Copy a media file into the managed tree and return its vault-relative
+        path. Copies, never moves: the original in Voice Memos or the camera
+        roll is never touched. Idempotent — an identical file already present
+        is left alone."""
+        import shutil
+        src = Path(src)
+        dest_dir = self._contained(self.managed_root / "Media" / subfolder)
+        dest = dest_dir / src.name
+        if dest.exists() and dest.stat().st_size == src.stat().st_size:
+            return self.relpath(self._contained(dest))
+        if dest.exists():
+            dest = self._unique_in_dir(dest_dir, src.name)
+        dest = self._contained(dest)
+        if self.dry_run:
+            return self.relpath(dest)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f".composter-tmp-{dest.name}")
+        shutil.copy2(src, self._contained(tmp))
+        os.replace(self._contained(tmp), dest)
+        return self.relpath(dest)
+
     def supersede(self, relpath: str, date_str: str) -> str | None:
         """Move (never delete) a managed file to _superseded/<date>/."""
         src = self._contained(self.vault_root / relpath)
