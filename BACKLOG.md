@@ -191,6 +191,12 @@ that what feels missing is not tags but the **interpretation layer**: dated,
 cited digest notes, which the plan already specifies and which compound over
 time instead of claiming to be permanently true.
 
+**Constrained by Principle 13** ("the owner makes the meaning", added
+2026-09-21 — see IMPLEMENTATION-STATUS.md). A generated tag is an assertion
+about meaning, and the connection-making is the part worth doing oneself. If
+this is ever built it belongs as an invisible retrieval-time aid — something
+that helps the right notes surface — never as a label presented as truth.
+
 **Sequencing.** After Phase 7. It cannot be evaluated before then, because the
 whole question is what retrieval leaves wanting. Related:
 [[a-second-pass-over-the-notes]] — the insight pass has similar machinery and a

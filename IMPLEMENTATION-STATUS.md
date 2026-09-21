@@ -188,6 +188,55 @@ original date, unrecoverable if not captured at import), `captured`, `source`,
 
 ---
 
+## A principle added after living with it
+
+The plan's twelve principles were written before anything was built. This one
+was added on 2026-09-21, after six weeks of use, and it governs Phase 7:
+
+> **13. The owner makes the meaning.** Tools surface material; they do not
+> declare what it means. The point of the archive is to help its owner build
+> understanding from their own work — not to be told, by a system, what the
+> connections are.
+
+**The distinction is retrieval versus interpretation**, and it is sharper than
+it sounds:
+
+| Hands you material to think with | Hands you a conclusion |
+|---|---|
+| "here are notes that match what you are asking about" | "your recurring theme this year is X" |
+| "these five notes are similar to the one you are writing" | "these notes should be tagged *ambition*" |
+| "here is everything from last spring" | "last spring you were preoccupied with leaving" |
+| an excerpt, in the note's own words | a summary, in the machine's words |
+
+The left column makes the owner a better rememberer. The right column does the
+thinking and hands over the result — which is precisely the part worth doing
+oneself, and the part where a plausible-sounding wrong answer is invisible.
+
+**What this rules in.** Semantic search, similarity, date and authorship
+filtering, the timeline view, and returning the *best-matching excerpt in the
+note's own words* — §10.1 already argues that excerpt is what keeps search from
+feeling like a black box, and under this principle it is not a nicety but the
+whole shape of the interface.
+
+**What this demotes.** Two things, both already in the backlog and both now
+constrained rather than merely deferred:
+
+- *Auto-tagging / automatic Zettelkasten sorting.* A generated tag is an
+  assertion about meaning. Even done well it pre-empts the connection-making
+  this principle reserves for the owner. If it is ever built, it belongs as an
+  invisible retrieval-time aid, never as a label presented as truth.
+- *The accumulating interpretation layer* (plan §10.1 digests). The plan
+  already hedged here — "the part most likely to produce beautiful-sounding
+  nothing... generate one by hand and read it before building any scheduler
+  around this." This principle turns that caution into a default no. A dated,
+  cited digest the owner *writes* is a first-class corpus item; one the machine
+  writes is the right column of the table above.
+
+**The test to apply.** Does this output hand me raw material, or a verdict? If
+the second, the tool has taken the interesting work.
+
+---
+
 ## What is next, and what it depends on
 
 **Immediately: live with it.** The plan makes the week-long pause a real step,
