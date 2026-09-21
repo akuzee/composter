@@ -141,9 +141,15 @@ def collect_checks(cfg: Config) -> list[tuple[str, bool | None, str]]:
     else:
         checks.append((
             "Full Disk Access (Phases 4–5)", None,
-            f"cannot read {CONTAINER}. Grant Full Disk Access to "
-            f"~/Applications/Composter.app, then run doctor THROUGH it: "
-            f"~/Applications/Composter.app/Contents/MacOS/Composter doctor"))
+            "cannot read the Voice Memos container. macOS attributes file "
+            "access to the process that was LAUNCHED, so grant Full Disk "
+            "Access to whatever you are running this from (Terminal.app, "
+            "iTerm, VS Code) for manual runs; for the scheduled agent, drag "
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 "
+            "into the Full Disk Access list from Finder (the picker refuses "
+            "loose executables, but drag-and-drop works). Running "
+            "Composter.app's inner executable from a shell tests the SHELL's "
+            "grant, not the app's."))
 
     return checks
 

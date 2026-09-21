@@ -19,14 +19,14 @@ yet, and that is the next real question.
 | 1 — The spine | **done** | `config` `db` `vault` `main` `doctor` `status` + fixture source; full state machine exercised before any real source existed |
 | 2 — Apple Notes, text | **done** | JXA two-phase fetch, `htmlmd`, folder mirroring; five-step milestone passed on the real vault |
 | 3 — Scheduler + failure surface | **done** | Hourly launchd agent, `flock`, three-tier failure surfacing |
-| — Live with it for a week | **pending** | The deliberate pause. Principle 12 names tool-building as the top risk to the enterprise |
-| 4 — Voice Memos | not started | Blocked on Full Disk Access |
+| — Live with it for a week | **done, involuntarily** | Six weeks and 352 unattended runs between Aug 10 and Sep 21. The corpus the plan said to wait for now exists |
+| 4 — Voice Memos | **code complete, unproven** | `transcribe.py` + `voice_memos.py` ship with 21 tests, including real `say`→ffmpeg→whisper runs. `enabled: false` and gated on Full Disk Access, so it has never seen a real recording |
 | 5 — iOS inbox + `Compost` shortcut | not started | Blocked on Full Disk Access |
 | 6 — Backfill existing notes | not started | Verb exists and refuses by design |
 | 7 — Retrieval | not started | Gated on a populated corpus, which now exists |
 | 8 — Read-later queue | not started | Gated on retrieval |
 
-67 tests, all passing. ~3,000 lines across `src/`, `triage/`, `scripts/`.
+88 tests, all passing. ~3,500 lines across `src/`, `triage/`, `scripts/`.
 
 ---
 

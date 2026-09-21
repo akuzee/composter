@@ -150,6 +150,98 @@ describes. Principle 12 ("build the selfish version") argues for the first.
 
 ---
 
+## Auto-tagging with an LLM — automatic Zettelkasten sorting
+
+**The idea.** Have a model read each note and assign topics, themes, and links
+to related notes, so the archive self-organises into something Zettelkasten-like
+without any of it being maintained by hand.
+
+**Why it is tempting.** Principle 8 rejects hand-kept tags because they rot —
+used for a while, then abandoned, with the meanings drifting underneath. A model
+does not get bored. If the objection to tags was really an objection to the
+*labour* of tags, this removes the objection entirely.
+
+**Three things it collides with, and they are not the same objection.**
+
+1. **No LLM calls in the capture layer** (plan §11, risk 12) is a hard line, and
+   deliberately so — it is the boundary that keeps capture cheap, offline,
+   deterministic, and re-runnable. Any version of this that tags on import
+   crosses it. A version that tags at *index* time does not.
+2. **Principle 8 is about declaration, not labour.** "Meaning is inferred, not
+   declared." A tag written into a file is a declaration frozen at write time:
+   it claims to stay true, and it stops being true as the thinking moves on.
+   That failure is identical whether a human or a model wrote it. What makes it
+   survivable is *regenerability* — a tag that lives only in a disposable index
+   and can be recomputed at any moment never rots, because it is never old.
+   **So: never write generated tags into the markdown.** That single constraint
+   is what separates a good version of this from a bad one.
+3. **The triage lesson applies directly.** Classifying notes by *value* with
+   rules failed badly, and classifying by *meaning* is the same shape of
+   problem: plausible output, no way to check it, and errors that are invisible
+   until they mislead. Any version of this needs a way to be *wrong out loud* —
+   spot-checkable output, and a cheap path to regenerate when it disappoints.
+
+**The honest counterargument.** Embeddings may already do this better. "Notes
+related to this one" is what a vector index answers natively, without a
+vocabulary to invent, drift, or disagree about — and §10.1's dual-granularity
+chunking is specifically designed to surface the one paragraph that matches. The
+question to answer *before* building anything is whether, after living with
+semantic search, anything is actually missing that a tag would supply. It may be
+that what feels missing is not tags but the **interpretation layer**: dated,
+cited digest notes, which the plan already specifies and which compound over
+time instead of claiming to be permanently true.
+
+**Sequencing.** After Phase 7. It cannot be evaluated before then, because the
+whole question is what retrieval leaves wanting. Related:
+[[a-second-pass-over-the-notes]] — the insight pass has similar machinery and a
+different goal, and doing that first may answer whether this is needed at all.
+
+---
+
+## Transcribe the audio in Apple Photos videos
+
+**The idea.** Videos in the photo library have speech in them — someone
+explaining something, a thought recorded while walking, a moment worth
+remembering the words of. Extract the audio, transcribe it, and let those words
+enter the archive as text, so a video becomes findable by what was *said* in it
+rather than only by its date.
+
+**Why it fits.** The machinery already exists and is proven: `src/transcribe.py`
+does ffmpeg → whisper on Metal, and ffmpeg reads video containers as happily as
+audio ones — extracting a track is the same call with a different input. Videos
+are also the one part of a photo library where the text-shaped value is
+unambiguous, which is exactly what makes this narrower and more tractable than
+sorting the library as a whole.
+
+**Design constraints, inherited rather than invented.**
+- **Heavy media is referenced, never copied into the vault** (plan §5.1, and the
+  `max_inline_mb` rule). A note holds the transcript and a path; the video stays
+  in Photos. Copying video into a synced vault would be a serious mistake.
+- **The video is the original and is never touched** — same rule as voice memos.
+- **`created` comes from the video's own capture date**, not from when it was
+  processed. That date is unrecoverable if missed.
+- **Cost is real here in a way it is not for voice memos.** Video files are
+  large and the library is big, so this needs the same per-run budget as voice
+  (`max_minutes_per_run`) and probably a much smaller one.
+
+**What it needs first.**
+- Photos library access — a separate TCC grant from Full Disk Access, and a
+  different API surface (PhotoKit) than reading files from a container.
+- A decision on scope: **only videos the owner marks**, or a sweep of the whole
+  library. The narrow version is far better as a first attempt, for the same
+  reason the plan starts with capture rather than backfill.
+- A real quality check on the first few transcripts. Ambient video audio is
+  noisier than a deliberate voice memo, so `base.en` is even less likely to be
+  adequate — this may be the thing that forces the `large-v3-turbo` upgrade.
+
+**Relationship to the other photo idea.** This is *not* the multimodal image
+triage above and should not be built as part of it. That one classifies images
+by whether they are worth keeping; this one extracts text that already exists.
+Different inputs, different machinery, different failure modes. This is the
+smaller and more clearly valuable of the two, and could ship long before it.
+
+---
+
 ## Deferred from the current build
 
 These came up while building Phases 1–2 and were parked with a reason.
