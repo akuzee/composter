@@ -130,6 +130,13 @@ class AppleNotesSource(Source):
             html = b.get("body") or ""
             atts = [str(a) for a in (b.get("attachments") or []) if a]
             md = html_to_markdown(html, title=title)
+            # Notes uses the first line as the note's name, and html_to_markdown
+            # drops that duplicate heading. For a one-line jot that leaves an
+            # empty body — but the title IS the thought, so the note would be a
+            # blank page in Obsidian and near-contentless to any indexer. Put
+            # the thought in the body, where content belongs.
+            if not md.strip() and _meaningful(title):
+                md = title.strip()
             # Normalized attachments may not appear in body HTML at all;
             # surface every attachment the note knows about, no silent loss.
             for att in atts:

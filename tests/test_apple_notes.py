@@ -113,14 +113,16 @@ def test_batching():
     assert [len(b) for b in fake.body_calls] == [50, 50, 20]
 
 
-def test_title_only_note_is_a_capture_not_a_skip():
-    """One-line jots are real captures — the title IS the thought."""
+def test_title_only_note_carries_the_thought_in_its_body():
+    """One-line jots are real captures — the title IS the thought, so it must
+    land in the body. Otherwise the note is a blank page in Obsidian and has
+    nothing but frontmatter boilerplate for an indexer to embed."""
     fake = FakeJXA(bodies={**BODIES, "n1": {"id": "n1", "name": "composting metaphor",
                                             "body": "<div><h1>composting metaphor</h1></div>"}})
     src, _ = make_source(fake)
     n1 = next(c for c in src.captures() if c.source_id == "n1")
     assert n1.skip_reason is None
-    assert n1.body == ""
+    assert n1.body == "composting metaphor"
 
 
 def test_truly_empty_note_yields_skip():
