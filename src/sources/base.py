@@ -53,6 +53,11 @@ class Source:
 
     name: str = "base"
     subfolder: str = "Notes"  # zCompost/<subfolder>/ where captures land
+    # Whether source_ref names an upstream FOLDER worth reproducing in the
+    # vault. True for Apple Notes, whose folder tree is meaningful. False
+    # everywhere else — for voice memos source_ref is a filename, and
+    # mirroring it buries every transcript in its own directory.
+    mirror_folders: bool = False
 
     def captures(self, limit: int | None = None,
                  known_mods: dict[str, str] | None = None) -> list[Capture]:

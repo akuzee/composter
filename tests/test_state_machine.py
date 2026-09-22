@@ -402,3 +402,19 @@ def test_fingerprint_rematch_survives_id_reissue(seeded):
     assert fm["composter_id"] == "fixture:fx-reissued"
     seeded.reindex(minutes=30)
     assert seeded.db.get_item("fixture", "fx-reissued").missing_runs == 0
+
+
+def test_relocate_prunes_the_empty_folders_it_leaves(env):
+    """Relocating out of mirrored folders must not leave empty husks."""
+    from src.main import run_relocate
+    env.set_fixture([dict(ENTRY, source_ref="iCloud/quotes")])
+    env.pull()
+    assert (env.vault / "zCompost" / "Notes" / "quotes").is_dir()
+
+    env.set_fixture([dict(ENTRY)])          # no folder upstream any more
+    env.pull(minutes=15)
+    result = run_relocate(env.cfg, env.db)
+    assert result["moved"] == 1
+    assert result["pruned_empty_dirs"] >= 1
+    assert not (env.vault / "zCompost" / "Notes" / "quotes").exists()
+    assert (env.vault / "zCompost" / "Notes").is_dir(), "the base must survive"

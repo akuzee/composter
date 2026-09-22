@@ -275,3 +275,10 @@ def test_recording_longer_than_the_whole_budget_still_imports(recordings, tmp_pa
     # rather than starving. (max_minutes_per_run=0 is the degenerate case.)
     caps = src.captures()
     assert len(caps) == 1, "a single over-budget recording must not starve"
+
+
+def test_voice_transcripts_are_not_buried_in_per_file_folders():
+    """source_ref for a voice memo is a FILENAME, not a folder. Mirroring it
+    gave every transcript its own directory named after the .m4a."""
+    from src.sources.voice_memos import VoiceMemosSource
+    assert VoiceMemosSource.mirror_folders is False

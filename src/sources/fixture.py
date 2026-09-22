@@ -26,6 +26,9 @@ from .base import Capture, Source
 class FixtureSource(Source):
     name = "fixture"
     subfolder = "Notes"
+    # The fixture stands in for a folder-bearing source (Apple Notes) so the
+    # mirroring and relocate paths can be exercised without touching Notes.app.
+    mirror_folders = True
 
     def __init__(self, path: Path | str):
         self.path = Path(path)

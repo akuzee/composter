@@ -232,7 +232,8 @@ def _apply_capture(cfg: Config, db: DB, writer: VaultWriter, source: Source,
             return "circuit_breaker"
         captured_iso = iso(now)
         cap = _materialize_media(cfg, writer, source, cap)
-        result = writer.create(cap, captured_iso, source.subfolder)
+        result = writer.create(cap, captured_iso, source.subfolder,
+                               mirror_folders=getattr(source, "mirror_folders", False))
         if not dry_run:
             if item is None:
                 item = db.insert_item(
@@ -484,6 +485,13 @@ def cmd_pull(args) -> int:
         print(f"circuit breaker raised for this run only: "
               f"{cfg.max_new_per_run} -> {args.max_new}", file=sys.stderr)
         cfg.max_new_per_run = args.max_new
+    if getattr(args, "max_minutes", None):
+        voice = cfg.sources.get("voice")
+        if voice:
+            print(f"voice minute budget raised for this run only: "
+                  f"{voice.options.get('max_minutes_per_run', 30)} -> "
+                  f"{args.max_minutes}", file=sys.stderr)
+            voice.options["max_minutes_per_run"] = args.max_minutes
     pre = _snapshot_outside(cfg)
     result = run_pull(cfg, db, args.source, limit=args.limit, dry_run=args.dry_run)
     print(json.dumps(result, indent=1))
@@ -614,7 +622,9 @@ def run_relocate(cfg: Config, db: DB, dry_run: bool = False) -> dict:
         if not base or not item.path:
             skipped += 1
             continue
-        want = subfolder_for(base, item.source_ref)
+        src_obj = next((s for s in sources.values() if s.name == item.source), None)
+        want = (subfolder_for(base, item.source_ref)
+                if getattr(src_obj, "mirror_folders", False) else base)
         current = str(Path(item.path).parent.relative_to(cfg.managed_dir))
         if current == want:
             skipped += 1
@@ -627,7 +637,15 @@ def run_relocate(cfg: Config, db: DB, dry_run: bool = False) -> dict:
             db.update_item(item.id, path=new_rel)
         moved.append((item.path, new_rel))
 
-    return {"moved": len(moved), "unchanged": skipped, "dry_run": dry_run,
+    # Prune whether or not anything moved this time: a previous relocate (or
+    # an interrupted one) can leave husks that no later run would ever clear.
+    pruned = 0
+    if not dry_run:
+        for base in {b for b in base_for.values() if b}:
+            pruned += writer.prune_empty_dirs(base)
+
+    return {"moved": len(moved), "unchanged": skipped, "pruned_empty_dirs": pruned,
+            "dry_run": dry_run,
             "examples": [f"{a} -> {b}" for a, b in moved[:10]]}
 
 
@@ -666,6 +684,10 @@ def main(argv=None) -> int:
     p.add_argument("--source", required=True, choices=["fixture", "notes", "voice", "ios"])
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--max-minutes", type=int, default=None,
+                   help="override the voice source's max_minutes_per_run for this "
+                        "run only. The config value guards a SCHEDULED run against "
+                        "one long recording; raise it by hand for a backfill.")
     p.add_argument("--max-new", type=int, default=None,
                    help="override writer.max_new_per_run for this run only. The config "
                         "value is a circuit breaker against a mass ID re-issue creating "

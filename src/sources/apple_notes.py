@@ -60,6 +60,7 @@ def _to_local_iso(iso_utc: str | None) -> str | None:
 class AppleNotesSource(Source):
     name = "apple-notes"
     subfolder = "Notes"
+    mirror_folders = True    # the upstream folder tree is meaningful here
 
     def __init__(self, quiet_seconds: int = 120, batch_size: int = 50,
                  max_fetch_per_run: int = 200,

@@ -134,6 +134,12 @@ def test_non_speech_annotations_are_stripped():
     assert strip_non_speech("[BLANK_AUDIO] Alright so [MUSIC] here we go") == \
         "Alright so here we go"
     assert strip_non_speech("a normal sentence.") == "a normal sentence."
+    # whisper uses parentheses for the same purpose
+    assert strip_non_speech("(upbeat music)") == ""
+    assert strip_non_speech("(soft laughter)") == ""
+    # ...but parentheses in real speech must survive
+    assert strip_non_speech("I said (quietly) that it matters") == \
+        "I said (quietly) that it matters"
 
 
 def test_annotation_only_recording_yields_nothing():

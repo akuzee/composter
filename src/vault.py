@@ -255,9 +255,10 @@ class VaultWriter:
 
     # -- captures ------------------------------------------------------------
 
-    def create(self, cap, captured_iso: str, subfolder: str) -> WriteResult:
-        relpath = self._unique_relpath(
-            subfolder_for(subfolder, cap.source_ref), cap, captured_iso)
+    def create(self, cap, captured_iso: str, subfolder: str,
+               mirror_folders: bool = True) -> WriteResult:
+        dest = subfolder_for(subfolder, cap.source_ref) if mirror_folders else subfolder
+        relpath = self._unique_relpath(dest, cap, captured_iso)
         body = cap.body.rstrip()
         fm = self._frontmatter_for(cap, captured_iso, rev=1, creation=None, extras=None)
         text = render_note(fm, body, tail="\n")
@@ -373,6 +374,30 @@ class VaultWriter:
         shutil.copy2(src, self._contained(tmp))
         os.replace(self._contained(tmp), dest)
         return self.relpath(dest)
+
+    def prune_empty_dirs(self, subfolder: str) -> int:
+        """Remove directories left empty by relocate.
+
+        This removes no content — a directory with anything at all in it is
+        left alone — and it is containment-checked like every other path.
+        Without it, relocating out of mirrored folders leaves the vault full
+        of empty husks.
+        """
+        root = self._contained(self.managed_root / subfolder)
+        if not root.is_dir() or self.dry_run:
+            return 0
+        removed = 0
+        # Deepest first, so a directory emptied by this pass can itself go.
+        for d in sorted((p for p in root.rglob("*") if p.is_dir()),
+                        key=lambda p: len(p.parts), reverse=True):
+            d = self._contained(d)
+            try:
+                if not any(d.iterdir()):
+                    d.rmdir()
+                    removed += 1
+            except OSError:
+                continue
+        return removed
 
     def supersede(self, relpath: str, date_str: str) -> str | None:
         """Move (never delete) a managed file to _superseded/<date>/."""

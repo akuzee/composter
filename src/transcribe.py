@@ -96,9 +96,35 @@ def to_wav(src: Path, dest: Path) -> None:
 # is *only* annotations has no speech in it at all.
 _NON_SPEECH = re.compile(r"\[[^\]]{0,40}\]")
 
+# whisper also uses PARENTHESES for the same purpose: "(upbeat music)",
+# "(laughter)", "(indistinct chatter)". Parentheses do appear in real speech,
+# so only strip them when the content is a recognised sound description —
+# never on the basis of the brackets alone.
+_SOUND_WORDS = (
+    "music", "laughter", "laughs", "applause", "silence", "sighs", "sigh",
+    "coughs", "coughing", "chuckles", "singing", "sings", "humming", "noise",
+    "static", "beeping", "ringing", "footsteps", "indistinct", "inaudible",
+    "chatter", "wind", "engine", "clicking", "banging", "breathing",
+)
+_PAREN = re.compile(r"\(([^)]{0,60})\)")
+
+
+def _is_sound_description(inner: str) -> bool:
+    """A short parenthetical naming a sound. Modifiers are common and varied
+    ("upbeat music", "soft laughter"), so requiring every word to be a sound
+    word fails; requiring one, in a short phrase, does not. Real speech rarely
+    arrives parenthesised at all — whisper uses them almost exclusively for
+    annotation — so this errs toward stripping."""
+    words = re.findall(r"[a-z]+", inner.lower())
+    if not words or len(words) > 5:
+        return False
+    return any(w.startswith(s) or s.startswith(w) for w in words for s in _SOUND_WORDS)
+
 
 def strip_non_speech(text: str) -> str:
     cleaned = _NON_SPEECH.sub(" ", text or "")
+    cleaned = _PAREN.sub(
+        lambda m: " " if _is_sound_description(m.group(1)) else m.group(0), cleaned)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
