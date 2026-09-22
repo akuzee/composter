@@ -18,6 +18,7 @@ is dormant here and only graduation and dismissal apply.
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -39,6 +40,12 @@ AUDIO_SUFFIXES = (".m4a", ".wav", ".mp3", ".aac", ".caf")
 
 # Core Data counts seconds from 2001-01-01, not the Unix epoch.
 CORE_DATA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
+
+# Measured on macOS 26: for an unnamed memo ZCUSTOMLABEL holds an ISO
+# timestamp ("2026-09-09T04:02:22Z"), not a human title. Using it verbatim
+# would produce a vault full of files named after timestamps — unfindable,
+# and redundant with `created`. Detect that shape and prefer the transcript.
+_ISO_LABEL = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}")
 
 QUIET_SECONDS = 90          # gate 1: too recently modified
 STABLE_WINDOW_SECONDS = 5   # gate 2: size unchanged across this interval
@@ -163,13 +170,29 @@ class VoiceMemosSource(Source):
         time.sleep(0)  # size stability is checked by the caller across a window
         return True, ""
 
-    def _size_stable(self, path: Path) -> bool:
-        try:
-            first = path.stat().st_size
-            time.sleep(STABLE_WINDOW_SECONDS)
-            return path.stat().st_size == first
-        except OSError:
-            return False
+    def _stable_set(self, paths: list[Path]) -> set[Path]:
+        """Gate 2, batched: snapshot every candidate's size, sleep ONCE, then
+        re-check. The obvious per-file implementation sleeps 5s each, which on
+        a library of 100 recordings is eight minutes of doing nothing — and it
+        happens before the cheaper gates have had a chance to rule files out.
+        """
+        if not paths:
+            return set()
+        first: dict[Path, int] = {}
+        for p in paths:
+            try:
+                first[p] = p.stat().st_size
+            except OSError:
+                continue
+        time.sleep(STABLE_WINDOW_SECONDS)
+        stable = set()
+        for p, size in first.items():
+            try:
+                if p.stat().st_size == size:
+                    stable.add(p)
+            except OSError:
+                continue
+        return stable
 
     def _icloud_placeholder(self, path: Path) -> bool:
         """`.name.icloud` stubs are not-yet-downloaded files. Never treat one as
@@ -191,32 +214,46 @@ class VoiceMemosSource(Source):
         out: list[Capture] = []
         budget_seconds = self.max_minutes_per_run * 60
 
+        # Newest recording first, by the date the memo was MADE. Filesystem
+        # mtime is useless here: everything that syncs down from iCloud lands
+        # with the same sync timestamp, so ordering by it is arbitrary and
+        # `--limit N` would return a random N rather than the latest N.
+        def recorded_at(p: Path) -> float:
+            d = (meta.get(p.name) or {}).get("date")
+            return float(d) if d else p.stat().st_mtime
+
         files = sorted((p for p in self.root.iterdir()
                         if p.suffix.lower() in AUDIO_SUFFIXES and p.is_file()),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
+                       key=recorded_at, reverse=True)
 
         for path in self.root.iterdir():
             if self._icloud_placeholder(path):
                 pending_download.append(path)
 
+        # Cheap gates first, so the expensive ones only see real candidates.
+        candidates: list[tuple[Path, str, dict]] = []
         for path in files:
             ok, _why = self._ready(path)
             if not ok:
-                continue
-
+                continue                      # gate 1: modified too recently
             row = meta.get(path.name) or {}
             source_id = row.get("unique_id") or hash_identity(path)
-            alt_id = hash_identity(path) if row.get("unique_id") else None
             if known.get(source_id):
                 continue                      # already imported; write-once
+            candidates.append((path, source_id, row))
 
-            if not self._size_stable(path):
+        stable = self._stable_set([c[0] for c in candidates])   # gate 2, one sleep
+
+        for path, source_id, row in candidates:
+            if path not in stable:
                 continue
             duration = probe_duration(path)
             if duration is None:
                 continue                      # truncated or still syncing
-            if duration > budget_seconds:
-                continue                      # try again next run
+            # A single recording longer than the entire budget would otherwise
+            # be deferred on every run, forever. Let the first one through.
+            if duration > budget_seconds and budget_seconds < self.max_minutes_per_run * 60:
+                continue                      # budget already spent; try next run
             budget_seconds -= duration
 
             created = row.get("date")
@@ -225,7 +262,8 @@ class VoiceMemosSource(Source):
                            if created else
                            datetime.fromtimestamp(path.stat().st_mtime)
                            .astimezone().isoformat(timespec="seconds"))
-            title = (row.get("title") or path.stem).strip() or path.stem
+            label = (row.get("title") or "").strip()
+            human_label = label if label and not _ISO_LABEL.match(label) else ""
 
             try:
                 result = transcribe(path, self.model, self.transcripts_dir,
@@ -233,6 +271,11 @@ class VoiceMemosSource(Source):
             except TranscribeError:
                 continue                      # retried next run; never fatal
 
+            # An unnamed memo gets its title from what was actually said —
+            # far more findable than "voice memo" a hundred times over, and
+            # the filename is chosen once at creation so it must be good now.
+            title = human_label or _title_from_transcript(result.text) or (
+                f"voice memo {created_iso[:10]}" if created_iso else "voice memo")
             out.append(Capture(
                 source=self.name,
                 source_id=source_id,
@@ -268,3 +311,16 @@ def _request_downloads(paths: list[Path]) -> None:
                            capture_output=True, timeout=30, check=False)
         except (OSError, subprocess.SubprocessError):
             pass
+
+
+def _title_from_transcript(text: str, words: int = 9) -> str:
+    """First few words of what was said, as the note's title.
+
+    Voice memos arrive unnamed, and the filename is chosen once at creation
+    and never changed (plan §7.2 invariant 5), so it has to be worth keeping.
+    """
+    flat = " ".join((text or "").split())
+    if not flat:
+        return ""
+    head = " ".join(flat.split(" ")[:words])
+    return head.rstrip(" ,.;:—-").strip()

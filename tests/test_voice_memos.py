@@ -165,11 +165,31 @@ def test_already_imported_memo_is_not_retranscribed(recordings, tmp_path):
     assert again == [], "must not burn whisper time on an unchanged memo"
 
 
+def make_silent(root: Path, name: str, seconds: int) -> Path:
+    """A long file, generated instantly — for testing duration gates."""
+    dest = root / name
+    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+                    "-t", str(seconds), str(dest)],
+                   check=True, capture_output=True, timeout=300)
+    return dest
+
+
 @needs_tools
-def test_long_recording_deferred_by_minute_budget(recordings, tmp_path):
-    make_recording(recordings, "memo.m4a", "A short one.")
-    src = source(recordings, tmp_path, quiet_seconds=0, max_minutes_per_run=0)
-    assert src.captures() == [], "one long recording must not blow a run"
+def test_minute_budget_defers_later_recordings(recordings, tmp_path):
+    """One long recording must not blow a scheduled run — but it must also not
+    starve. The first is let through even if over budget; the next waits."""
+    # Different lengths on purpose: two byte-identical files would hash to the
+    # same identity, which is correct dedupe behaviour but useless here.
+    make_silent(recordings, "a.m4a", 120)
+    make_silent(recordings, "b.m4a", 100)
+    src = source(recordings, tmp_path, quiet_seconds=0, max_minutes_per_run=1)
+    caps = src.captures()
+    assert len(caps) == 1, "exactly one recording should fit in a 1-minute budget"
+
+    # The deferred one is picked up on a later run.
+    later = source(recordings, tmp_path, quiet_seconds=0, max_minutes_per_run=1)
+    assert len(later.captures(known_mods={caps[0].source_id: "seen"})) == 1
 
 
 # -- through the engine, into a temp vault --------------------------------------
@@ -203,3 +223,55 @@ def test_voice_capture_lands_in_the_vault_with_playable_audio(env, tmp_path):
     again = run_pull(env.cfg, env.db, "voice", now=env.t0, source=src)
     assert again["created"] == 0
     assert (notes[0].read_bytes(), notes[0].stat().st_mtime_ns) == before
+
+
+# -- titles, measured against the real macOS 26 schema --------------------------
+
+def test_iso_timestamp_label_is_not_used_as_a_title():
+    """Voice Memos stores an ISO timestamp in ZCUSTOMLABEL for unnamed memos.
+    Using it verbatim would fill the vault with files named after timestamps."""
+    from src.sources.voice_memos import _ISO_LABEL
+    assert _ISO_LABEL.match("2026-09-09T04:02:22Z")
+    assert _ISO_LABEL.match("2026-09-02 00:38:29")
+    assert not _ISO_LABEL.match("walk thoughts")
+    assert not _ISO_LABEL.match("2026 plans")
+
+
+def test_title_comes_from_the_transcript():
+    from src.sources.voice_memos import _title_from_transcript
+    assert _title_from_transcript(
+        "So I keep coming back to the idea that the unit of work is smallest"
+    ) == "So I keep coming back to the idea that"
+    assert _title_from_transcript("") == ""
+    assert _title_from_transcript("   ") == ""
+
+
+@needs_tools
+def test_unnamed_memo_is_titled_by_what_was_said(recordings, tmp_path):
+    make_recording(recordings, "memo.m4a",
+                   "Good scraps, not completeness, is the whole idea here.")
+    make_db(recordings, [("UNIQ-1", "/x/memo.m4a", 0.0, "2026-09-09T04:02:22Z", 5.0)],
+            "ZUNIQUEID TEXT, ZPATH TEXT, ZDATE REAL, ZCUSTOMLABEL TEXT, ZDURATION REAL")
+    cap = source(recordings, tmp_path, quiet_seconds=0).captures()[0]
+    assert not cap.title.startswith("2026-")
+    assert "scraps" in cap.title.lower()
+
+
+@needs_tools
+def test_human_label_wins_over_the_transcript(recordings, tmp_path):
+    make_recording(recordings, "memo.m4a", "Some spoken words here.")
+    make_db(recordings, [("UNIQ-2", "/x/memo.m4a", 0.0, "walk thoughts", 5.0)],
+            "ZUNIQUEID TEXT, ZPATH TEXT, ZDATE REAL, ZCUSTOMLABEL TEXT, ZDURATION REAL")
+    cap = source(recordings, tmp_path, quiet_seconds=0).captures()[0]
+    assert cap.title == "walk thoughts"
+
+
+@needs_tools
+def test_recording_longer_than_the_whole_budget_still_imports(recordings, tmp_path):
+    """Otherwise a 46-minute memo is deferred on every run, forever."""
+    make_recording(recordings, "memo.m4a", "A recording.")
+    src = source(recordings, tmp_path, quiet_seconds=0, max_minutes_per_run=0)
+    # budget 0 means nothing fits; the first item must still be let through
+    # rather than starving. (max_minutes_per_run=0 is the degenerate case.)
+    caps = src.captures()
+    assert len(caps) == 1, "a single over-budget recording must not starve"

@@ -8,6 +8,8 @@ model can be re-run later without re-reading the original audio.
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -34,12 +36,27 @@ class Transcript:
     json_path: Path | None = None
 
 
+# launchd gives a job a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), which
+# does not include Homebrew. Relying on PATH alone means every tool lookup
+# fails under the scheduler while working perfectly from a shell — and the
+# failure is silent, because a missing ffprobe just looks like an unreadable
+# recording. Search the standard install locations explicitly.
+_TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin")
+
+
 def _tool(name: str, alternatives: tuple[str, ...] = ()) -> str:
     for candidate in (name, *alternatives):
         found = shutil.which(candidate)
         if found:
             return found
-    raise TranscribeError(f"{name} not found on PATH")
+        for d in _TOOL_DIRS:
+            p = Path(d) / candidate
+            if p.is_file() and os.access(p, os.X_OK):
+                return str(p)
+    raise TranscribeError(
+        f"{name} not found. Searched PATH and {', '.join(_TOOL_DIRS)}. "
+        f"Under launchd the PATH is minimal, so Homebrew tools must be found "
+        f"by absolute path.")
 
 
 def probe_duration(path: Path) -> float | None:
@@ -73,6 +90,18 @@ def to_wav(src: Path, dest: Path) -> None:
         raise TranscribeError(f"ffmpeg failed on {src.name}: {proc.stderr.strip()[:300]}")
 
 
+# whisper.cpp annotates non-speech audio in square brackets: [BLANK_AUDIO],
+# [MUSIC], [SPLAT], [INAUDIBLE]. They are descriptions of sound, not words that
+# were said, so they must not become note titles or body text. A recording that
+# is *only* annotations has no speech in it at all.
+_NON_SPEECH = re.compile(r"\[[^\]]{0,40}\]")
+
+
+def strip_non_speech(text: str) -> str:
+    cleaned = _NON_SPEECH.sub(" ", text or "")
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
 def assemble(segments: list[dict]) -> str:
     """Join whisper segments into readable prose.
 
@@ -99,7 +128,10 @@ def assemble(segments: list[dict]) -> str:
 
     if current:
         paragraphs.append(current)
-    return "\n\n".join(" ".join(p) for p in paragraphs).strip()
+    joined = "\n\n".join(" ".join(p) for p in paragraphs)
+    cleaned = "\n\n".join(
+        s for s in (strip_non_speech(par) for par in joined.split("\n\n")) if s)
+    return cleaned.strip()
 
 
 def transcribe(src: Path, model: Path, transcripts_dir: Path,
