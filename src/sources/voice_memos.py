@@ -26,8 +26,14 @@ from pathlib import Path
 from ..transcribe import TranscribeError, probe_duration, transcribe
 from .base import Capture, Source
 
-CONTAINER = Path.home() / "Library" / "Group Containers" / \
-    "group.com.apple.VoiceMemos.shared" / "Recordings"
+GROUP_CONTAINER = Path.home() / "Library" / "Group Containers" / \
+    "group.com.apple.VoiceMemos.shared"
+# Measured on macOS 26 (2026-09-22): the group container exists but holds only
+# an empty Library/ skeleton until the first recording syncs to this Mac, so
+# the exact subfolder could not be confirmed. Older macOS used Recordings/.
+# Rather than hard-code a guess, resolve at call time and fall back to
+# searching the container for audio.
+CONTAINER = GROUP_CONTAINER / "Recordings"
 DB_NAME = "CloudRecordings.db"
 AUDIO_SUFFIXES = (".m4a", ".wav", ".mp3", ".aac", ".caf")
 
@@ -42,12 +48,34 @@ class VoiceMemosBlocked(RuntimeError):
     """The recordings container is not readable — Full Disk Access is missing."""
 
 
-def container_readable(root: Path = CONTAINER) -> bool:
+def container_readable(root: Path = GROUP_CONTAINER) -> bool:
+    """Readable means the TCC grant is in place — not that recordings exist."""
     try:
         root.iterdir()
         return True
     except (PermissionError, OSError):
         return False
+
+
+def resolve_recordings_dir(group: Path = GROUP_CONTAINER) -> Path | None:
+    """Find the directory actually holding recordings.
+
+    Apple has moved this between releases and it does not exist at all until
+    the first memo syncs, so prefer discovery over a hard-coded path. Returns
+    None when the container is unreadable or simply has no audio in it yet.
+    """
+    if not container_readable(group):
+        return None
+    preferred = group / "Recordings"
+    if preferred.is_dir():
+        return preferred
+    try:
+        for p in group.rglob("*"):
+            if p.is_file() and p.suffix.lower() in AUDIO_SUFFIXES:
+                return p.parent
+    except OSError:
+        return None
+    return preferred if preferred.exists() else None
 
 
 def hash_identity(path: Path) -> str:

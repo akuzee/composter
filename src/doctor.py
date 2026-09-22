@@ -134,10 +134,19 @@ def collect_checks(cfg: Config) -> list[tuple[str, bool | None, str]]:
     # Probe what is actually needed — the Voice Memos container — rather than
     # TCC.db, which is protected more strictly than the thing we want and so
     # reports "blocked" even when voice capture would work fine.
-    from .sources.voice_memos import CONTAINER, container_readable
+    from .sources.voice_memos import (GROUP_CONTAINER, container_readable,
+                                      resolve_recordings_dir)
     if container_readable():
-        checks.append(("Full Disk Access (Phases 4–5)", True,
-                       f"granted — {CONTAINER} is readable"))
+        found = resolve_recordings_dir()
+        if found is None:
+            checks.append((
+                "Full Disk Access (Phases 4–5)", True,
+                f"granted, but {GROUP_CONTAINER} holds no recordings. Voice "
+                f"Memos stores nothing on this Mac until a memo is recorded "
+                f"here, or iCloud sync for Voice Memos is enabled."))
+        else:
+            checks.append(("Full Disk Access (Phases 4–5)", True,
+                           f"granted — recordings at {found}"))
     else:
         checks.append((
             "Full Disk Access (Phases 4–5)", None,
