@@ -47,6 +47,26 @@ CORE_DATA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
 # and redundant with `created`. Detect that shape and prefer the transcript.
 _ISO_LABEL = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}")
 
+# whisper labels singing and instrumental alike as "[Music]". A recording with
+# no speech in it is therefore not necessarily empty — it may be a musical
+# idea, which is exactly the material the plan opens by naming: "Not a song —
+# one finished eight-second loop." Those become notes carrying the audio.
+# Silence, door slams and pocket noise stay skipped.
+_MUSICAL = re.compile(r"\b(music|singing|humming|guitar|piano|melody)\b", re.I)
+
+# ZENCRYPTEDTITLE holds the name shown in Voice Memos. Auto-generated names
+# look like "New Recording 15" or "Nueva grabación 6"; anything else the owner
+# typed. A NAMED recording is a deliberate capture even when it contains no
+# speech at all — the 2019 car-foley session ("keys", "wipers", "slam door")
+# and the musical sketches ("Sick chords", "cm7-bm7") are exactly that. This
+# is a test of form, not of value: named or not named.
+_AUTO_NAME = re.compile(r"^(new recording|nueva grabaci[oó]n|neue aufnahme|"
+                        r"nouvel enregistrement)(\s+\d+)?$", re.I)
+
+
+def is_auto_name(name: str) -> bool:
+    return not name.strip() or bool(_AUTO_NAME.match(name.strip()))
+
 QUIET_SECONDS = 90          # gate 1: too recently modified
 STABLE_WINDOW_SECONDS = 5   # gate 2: size unchanged across this interval
 
@@ -114,7 +134,7 @@ def read_cloud_recordings(root: Path = CONTAINER) -> dict[str, dict]:
         if not {"ZUNIQUEID", "ZPATH"} <= cols:
             return {}
         select = ["ZUNIQUEID", "ZPATH"]
-        for optional in ("ZDATE", "ZCUSTOMLABEL", "ZDURATION"):
+        for optional in ("ZDATE", "ZCUSTOMLABEL", "ZDURATION", "ZENCRYPTEDTITLE"):
             if optional in cols:
                 select.append(optional)
         for row in conn.execute(f"SELECT {', '.join(select)} FROM ZCLOUDRECORDING"):
@@ -127,7 +147,11 @@ def read_cloud_recordings(root: Path = CONTAINER) -> dict[str, dict]:
             out[Path(path).name] = {
                 "unique_id": row["ZUNIQUEID"],
                 "date": date,
-                "title": row["ZCUSTOMLABEL"] if "ZCUSTOMLABEL" in select else None,
+                # ZENCRYPTEDTITLE is the name shown in the app; ZCUSTOMLABEL
+                # is an ISO timestamp for unnamed memos, not a title.
+                "title": (row["ZENCRYPTEDTITLE"] if "ZENCRYPTEDTITLE" in select
+                          else None) or (row["ZCUSTOMLABEL"]
+                                         if "ZCUSTOMLABEL" in select else None),
                 "duration": row["ZDURATION"] if "ZDURATION" in select else None,
             }
     except sqlite3.Error:
@@ -263,7 +287,8 @@ class VoiceMemosSource(Source):
                            datetime.fromtimestamp(path.stat().st_mtime)
                            .astimezone().isoformat(timespec="seconds"))
             label = (row.get("title") or "").strip()
-            human_label = label if label and not _ISO_LABEL.match(label) else ""
+            named = bool(label) and not _ISO_LABEL.match(label) and not is_auto_name(label)
+            human_label = label if named else ""
 
             try:
                 result = transcribe(path, self.model, self.transcripts_dir,
@@ -274,20 +299,39 @@ class VoiceMemosSource(Source):
             # An unnamed memo gets its title from what was actually said —
             # far more findable than "voice memo" a hundred times over, and
             # the filename is chosen once at creation so it must be good now.
-            title = human_label or _title_from_transcript(result.text) or (
-                f"voice memo {created_iso[:10]}" if created_iso else "voice memo")
+            speechless = not result.text.strip()
+            if speechless:
+                # Keep it only if the owner named it. The audio is the content.
+                heard = (result.raw_text or "").strip()[:60] or "silence"
+                title = human_label or f"voice memo {created_iso[:10]}"
+                body = (f"> [!note] No speech in this recording — whisper heard "
+                        f"`{heard}`. The audio is the content.")
+                kind = "audio"
+            else:
+                # A name the owner typed beats an opening line from the
+                # transcript; "Sick chords" says more than its first six words.
+                title = human_label or _title_from_transcript(result.text) or (
+                    f"voice memo {created_iso[:10]}" if created_iso else "voice memo")
+                body = result.text
+                kind = "transcript"
             out.append(Capture(
                 source=self.name,
                 source_id=source_id,
                 title=title,
-                body=result.text,
+                body=body,
                 created=created_iso,
-                kind="transcript",
+                kind=kind,
                 source_ref=str(path.name),
+                # Voice memos are write-once, so identity IS the change stamp.
+                # Without a non-null value here the ledger stores nothing, the
+                # "already imported" prefilter never matches, and every
+                # scheduled run re-transcribes the entire library.
+                modified=source_id,
                 # The audio itself is attached by the engine, which owns the
                 # vault; a source never touches vault paths.
                 media=(str(path),),
-                skip_reason=None if result.text.strip() else "no speech detected",
+                # Skipped only when there is nothing said AND nothing named.
+                skip_reason=None if (not speechless or named) else "unnamed, no speech",
                 payload_hash=source_id,       # write-once: identity IS the hash
             ))
             if limit is not None and len(out) >= limit:

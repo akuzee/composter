@@ -282,3 +282,82 @@ def test_voice_transcripts_are_not_buried_in_per_file_folders():
     gave every transcript its own directory named after the .m4a."""
     from src.sources.voice_memos import VoiceMemosSource
     assert VoiceMemosSource.mirror_folders is False
+
+
+def test_music_recording_becomes_an_audio_note_not_a_skip():
+    """A sung idea has no speech but is exactly the material the plan opens by
+    naming: 'Not a song — one finished eight-second loop.'"""
+    from src.sources.voice_memos import _MUSICAL
+    assert _MUSICAL.search("[Music] [Music]")
+    assert _MUSICAL.search("(upbeat music)")
+    assert _MUSICAL.search("[Singing]")
+    assert not _MUSICAL.search("[BLANK_AUDIO]")
+    assert not _MUSICAL.search("[door slams]")
+    assert not _MUSICAL.search("[wind blowing]")
+
+
+def test_auto_generated_names_are_recognised():
+    """Voice Memos auto-names are "New Recording N" in the device language.
+    Anything else the owner typed, and a named recording is a deliberate
+    capture even when whisper finds no speech in it."""
+    from src.sources.voice_memos import is_auto_name
+    assert is_auto_name("New Recording")
+    assert is_auto_name("New Recording 15")
+    assert is_auto_name("Nueva grabación 6")
+    assert is_auto_name("")
+    assert not is_auto_name("Sick chords")
+    assert not is_auto_name("cm7-bm7")
+    assert not is_auto_name("wipers")
+
+
+@needs_tools
+def test_named_recording_without_speech_is_kept(recordings, tmp_path):
+    """A silent-but-named memo is a foley clip or a musical sketch, not junk."""
+    make_silent(recordings, "memo.m4a", 3)
+    make_db(recordings, [("UNIQ-N", "/x/memo.m4a", 0.0, "2016-05-09T00:00:00Z",
+                          3.0, "Sick chords")],
+            "ZUNIQUEID TEXT, ZPATH TEXT, ZDATE REAL, ZCUSTOMLABEL TEXT, "
+            "ZDURATION REAL, ZENCRYPTEDTITLE TEXT")
+    cap = source(recordings, tmp_path, quiet_seconds=0).captures()[0]
+    assert cap.skip_reason is None
+    assert cap.title == "Sick chords"
+    assert cap.kind == "audio"
+    assert cap.media, "the audio is the content, so it must be attached"
+
+
+@needs_tools
+def test_unnamed_recording_without_speech_is_skipped(recordings, tmp_path):
+    make_silent(recordings, "memo.m4a", 3)
+    make_db(recordings, [("UNIQ-A", "/x/memo.m4a", 0.0, "2026-01-01T00:00:00Z",
+                          3.0, "New Recording 15")],
+            "ZUNIQUEID TEXT, ZPATH TEXT, ZDATE REAL, ZCUSTOMLABEL TEXT, "
+            "ZDURATION REAL, ZENCRYPTEDTITLE TEXT")
+    cap = source(recordings, tmp_path, quiet_seconds=0).captures()[0]
+    assert cap.skip_reason == "unnamed, no speech"
+
+
+@needs_tools
+def test_owner_name_beats_a_transcript_opening(recordings, tmp_path):
+    make_recording(recordings, "memo.m4a", "Some words that were actually said.")
+    make_db(recordings, [("UNIQ-T", "/x/memo.m4a", 0.0, "2026-01-01T00:00:00Z",
+                          3.0, "cm7-bm7")],
+            "ZUNIQUEID TEXT, ZPATH TEXT, ZDATE REAL, ZCUSTOMLABEL TEXT, "
+            "ZDURATION REAL, ZENCRYPTEDTITLE TEXT")
+    cap = source(recordings, tmp_path, quiet_seconds=0).captures()[0]
+    assert cap.title == "cm7-bm7"
+
+
+@needs_tools
+def test_second_run_does_not_retranscribe_the_library(recordings, tmp_path, env):
+    """Write-once means a scheduled run must not burn whisper on memos it has
+    already imported. The prefilter needs a non-null stamp in the ledger."""
+    from src.main import run_pull
+    make_recording(recordings, "memo.m4a", "Words that were said out loud.")
+    src = VoiceMemosSource(root=recordings, model=MODEL,
+                           transcripts_dir=env.cfg.transcripts_dir,
+                           quiet_seconds=0, now=lambda: 1e12)
+    assert run_pull(env.cfg, env.db, "voice", now=env.t0, source=src)["created"] == 1
+
+    item = next(i for i in env.db.items_in_state("managed") if i.source == "voice-memo")
+    assert item.source_modified_at, "no stamp means the prefilter can never match"
+    assert env.db.mods_for_source("voice-memo"), "prefilter would be empty"

@@ -13,6 +13,7 @@ import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from . import alarm
 from . import doctor as doctor_mod
@@ -177,8 +178,13 @@ def _materialize_media(cfg: Config, writer: VaultWriter, source: Source,
         vault_paths.append(writer.attach_media(p, source.subfolder))
 
     embeds = "\n".join(f"![[{v}]]" for v in vault_paths)
+    # A bare filesystem path is not reachable from Obsidian. A file:// link is
+    # clickable and opens the original, which is the point of referencing at
+    # all — the note should get you to the audio even when the audio is too
+    # large to live in the vault.
     notes = "\n".join(
-        f"> [!info] Media kept outside the vault (over {cfg.max_inline_mb} MB): `{e}`"
+        f"> [!info] Audio kept outside the vault (over {cfg.max_inline_mb} MB) — "
+        f"[open {Path(e).name}](file://{quote(e)})"
         for e in external)
     header = "\n\n".join(x for x in (embeds, notes) if x)
     body = f"{header}\n\n{cap.body}".strip() if header else cap.body
@@ -220,6 +226,7 @@ def _apply_capture(cfg: Config, db: DB, writer: VaultWriter, source: Source,
             db.insert_item(source=cap.source, source_id=cap.source_id,
                            composter_id=cap.composter_id, state="skipped", now=iso(now),
                            title=cap.title, kind=cap.kind, skip_reason=cap.skip_reason,
+                           source_ref=cap.source_ref, created_at=cap.created,
                            fingerprint=cap.fingerprint)
         elif item is not None and item.state == "skipped" and not dry_run:
             db.update_item(item.id, skip_reason=cap.skip_reason)

@@ -34,6 +34,9 @@ class Transcript:
     duration_seconds: float
     model: str
     json_path: Path | None = None
+    # What whisper emitted before annotations were stripped. A recording with
+    # no speech is not necessarily empty: "[Music]" means something is there.
+    raw_text: str = ""
 
 
 # launchd gives a job a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), which
@@ -187,8 +190,11 @@ def transcribe(src: Path, model: Path, transcripts_dir: Path,
             f"whisper failed on {src.name}: {proc.stderr.strip()[-300:]}")
 
     data = json.loads(json_path.read_text(encoding="utf-8"))
+    segments = data.get("transcription") or []
+    raw = " ".join((s.get("text") or "").strip() for s in segments).strip()
     return Transcript(
-        text=assemble(data.get("transcription") or []),
+        raw_text=raw,
+        text=assemble(segments),
         duration_seconds=duration,
         model=model.name,
         json_path=json_path,
