@@ -145,3 +145,37 @@ def test_non_speech_annotations_are_stripped():
 def test_annotation_only_recording_yields_nothing():
     assert assemble([seg(" [SPLAT]", 0, 500)]) == ""
     assert assemble([seg(" [BLANK_AUDIO]", 0, 500), seg(" [MUSIC]", 600, 900)]) == ""
+
+
+@needs_tools
+def test_retained_transcript_is_reused_not_recomputed(tmp_path):
+    """Audio is immutable once recorded, so a cached transcript can never be
+    stale. Without reuse, every scheduled run re-transcribes recordings it has
+    already seen and chosen not to import."""
+    import time
+    aiff = tmp_path / "spoken.aiff"
+    subprocess.run(["say", "-o", str(aiff), "Good scraps, not completeness."],
+                   check=True, capture_output=True, timeout=120)
+    td = tmp_path / "transcripts"
+
+    t0 = time.monotonic()
+    first = transcribe(aiff, MODEL, td, stem="probe")
+    cold = time.monotonic() - t0
+
+    t0 = time.monotonic()
+    second = transcribe(aiff, MODEL, td, stem="probe")
+    warm = time.monotonic() - t0
+
+    assert second.text == first.text
+    assert warm < cold, "the second call must not re-run whisper"
+
+
+@needs_tools
+def test_reuse_can_be_turned_off(tmp_path):
+    aiff = tmp_path / "s.aiff"
+    subprocess.run(["say", "-o", str(aiff), "Words."], check=True,
+                   capture_output=True, timeout=120)
+    td = tmp_path / "t"
+    transcribe(aiff, MODEL, td, stem="x")
+    again = transcribe(aiff, MODEL, td, stem="x", reuse=False)
+    assert again.json_path and again.json_path.is_file()

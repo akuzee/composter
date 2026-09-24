@@ -164,20 +164,41 @@ def assemble(segments: list[dict]) -> str:
 
 
 def transcribe(src: Path, model: Path, transcripts_dir: Path,
-               stem: str) -> Transcript:
-    """Convert and transcribe. `stem` names the retained JSON."""
+               stem: str, reuse: bool = True) -> Transcript:
+    """Convert and transcribe. `stem` names the retained JSON.
+
+    `reuse` returns the retained JSON instead of re-running whisper when one
+    already exists for this recording. Audio is immutable once recorded, so a
+    cached transcript can never be stale — and without this, every scheduled
+    run re-transcribes each recording it has already seen but chosen not to
+    import, which is hours of CPU for a guaranteed-identical result.
+    """
     model = Path(model).expanduser()
     if not model.is_file():
         raise TranscribeError(f"whisper model not found: {model}")
-    whisper = _tool("whisper-cli", ("whisper-cpp", "main"))
 
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+    out_stem = transcripts_dir / stem
+    cached = out_stem.with_suffix(".json")
+    if reuse and cached.is_file():
+        try:
+            data = json.loads(cached.read_text(encoding="utf-8"))
+            segs = data.get("transcription") or []
+            return Transcript(
+                raw_text=" ".join((s.get("text") or "").strip() for s in segs).strip(),
+                text=assemble(segs),
+                duration_seconds=probe_duration(src) or 0.0,
+                model=model.name,
+                json_path=cached,
+            )
+        except (json.JSONDecodeError, OSError):
+            pass          # unreadable cache: fall through and redo it
+
+    whisper = _tool("whisper-cli", ("whisper-cpp", "main"))
     duration = probe_duration(src)
     if duration is None:
         raise TranscribeError(f"ffprobe could not read {src.name} — "
                               f"truncated, still syncing, or not audio")
-
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-    out_stem = transcripts_dir / stem
     with tempfile.TemporaryDirectory() as tmp:
         wav = Path(tmp) / "audio.wav"
         to_wav(src, wav)
