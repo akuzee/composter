@@ -98,27 +98,40 @@ that running it from a shell tests the *shell's* grant, not the bundle's.
   numbered lists, blockquotes, and link titles (Notes emits no `<a href>` — URLs
   arrive as underlined text and are unwrapped so Obsidian autolinks them).
 
-- **voice-memo** (Phase 4, built; needs Full Disk Access): reads the recordings
+- **voice-memo** (Phase 4, done; needs Full Disk Access): reads the recordings
   container, transcribes with ffmpeg + whisper.cpp on Metal, and writes a note
   with the audio embedded as `![[…]]` so Obsidian renders an inline player.
-  Originals are only ever read.
+  Originals are only ever read. Raw whisper JSON is retained in
+  `state/transcripts/` and reused rather than recomputed — audio is immutable,
+  so a cached transcript can never be stale, and a better model can be re-run
+  later with `reuse=False`.
+
+  **A recording is kept if the owner NAMED it, not if it contains speech.**
+  Voice Memos auto-names are `New Recording N` (matched in four languages);
+  anything else was typed by a person, and a named recording is a deliberate
+  capture whether or not anyone spoke in it — a foley clip or a musical sketch
+  is exactly the "one finished eight-second loop" the plan opens by naming.
+  Notes with speech get `kind: transcript`; named recordings without speech get
+  `kind: audio` and a note saying what whisper heard instead.
+
+  Identity is `ZUNIQUEID` from `CloudRecordings.db`; the display name is
+  `ZENCRYPTEDTITLE` (**not** `ZCUSTOMLABEL`, which holds an ISO timestamp).
+  Filenames are never identity — renaming a memo renames the file.
 
   Three independent gates guard against importing a partial file: mtime older
-  than 90 s, size stable across a 5 s window, and `ffprobe` returning a sane
-  duration — the last is the strongest, since a truncated or still-syncing
-  `.m4a` fails it. iCloud `.icloud` placeholders trigger `brctl download` and
-  are deferred. `max_minutes_per_run` stops one long recording blowing a run.
-  Voice memos are **write-once**, so the conflict machinery is dormant here.
+  than 90 s, size stable across a 5 s window (checked for all candidates in one
+  batch, not per-file), and `ffprobe` returning a sane duration. iCloud
+  `.icloud` placeholders trigger `brctl download` and are deferred.
+  `max_minutes_per_run` stops one long recording blowing a run, but a recording
+  longer than the entire budget is still let through rather than starving.
 
-  Identity is `ZUNIQUEID` from `CloudRecordings.db` when that schema is
-  readable, falling back to `sha256(first 1 MiB) + filesize` otherwise —
-  filenames are never identity, since renaming a memo renames the file.
+  **Tools are located by absolute path, not `PATH`.** launchd hands a job a
+  minimal PATH with no Homebrew on it, and the resulting failure is silent — a
+  missing `ffprobe` looks exactly like an unreadable recording.
 
-  **Transcript quality is a product risk, not just an accuracy one.** `base.en`
-  ships because it is already on disk; on reflective, half-mumbled,
-  walking-around speech it can be bad enough to make the feature feel
-  worthless. Point `sources.voice.model` at `ggml-large-v3-turbo-q5_0.bin`
-  (~550 MB) if the first transcripts disappoint.
+  `base.en` ships and proved good enough on reflective speech; point
+  `sources.voice.model` at `ggml-large-v3-turbo-q5_0.bin` (~550 MB) to clean up
+  the mangled words.
 
 - **ios** (Phase 5, not built): a `Compost` share-sheet shortcut writing JSON
   plus files to an iCloud folder, swept by the Mac. Also needs Full Disk Access.

@@ -20,7 +20,7 @@ yet, and that is the next real question.
 | 2 — Apple Notes, text | **done** | JXA two-phase fetch, `htmlmd`, folder mirroring; five-step milestone passed on the real vault |
 | 3 — Scheduler + failure surface | **done** | Hourly launchd agent, `flock`, three-tier failure surfacing |
 | — Live with it for a week | **done, involuntarily** | Six weeks and 352 unattended runs between Aug 10 and Sep 21. The corpus the plan said to wait for now exists |
-| 4 — Voice Memos | **code complete, unproven** | `transcribe.py` + `voice_memos.py` ship with 21 tests, including real `say`→ffmpeg→whisper runs. `enabled: false` and gated on Full Disk Access, so it has never seen a real recording |
+| 4 — Voice Memos | **done** | 158 recordings, 2015–2026. 83 transcripts, 47 audio notes, 23 skipped. Full Disk Access granted; runs hourly with Notes |
 | 5 — iOS inbox + `Compost` shortcut | not started | Blocked on Full Disk Access |
 | 6 — Backfill existing notes | not started | Verb exists and refuses by design |
 | 7 — Retrieval | not started | Gated on a populated corpus, which now exists |
@@ -234,6 +234,42 @@ constrained rather than merely deferred:
 
 **The test to apply.** Does this output hand me raw material, or a verdict? If
 the second, the tool has taken the interesting work.
+
+---
+
+## What Phase 4 taught, which Phase 2 had already implied
+
+Voice memos were written and tested before they had ever seen a real
+recording. Every test passed. Then the Full Disk Access grant landed and
+**eight bugs surfaced in a single session** — none of them findable without
+the real library:
+
+| Bug | What it would have caused |
+|---|---|
+| Tools resolved through `PATH` | launchd gives a job a minimal PATH with no Homebrew on it. Every ffprobe/ffmpeg/whisper lookup failed **only under the scheduler**, and silently: a missing ffprobe is indistinguishable from an unreadable recording. Voice capture would simply never have happened, with no error anywhere |
+| Size-stability gate slept 5s per file, before the cheap gates | Eight minutes of stalling per run on a 100-memo library |
+| Ordering by filesystem mtime | Everything synced from iCloud lands with the same timestamp, so `--limit N` returned an arbitrary N |
+| Read `ZCUSTOMLABEL` for the name | It holds an ISO timestamp. `ZENCRYPTEDTITLE` is the name shown in the app. Notes were titled after their own timestamps, and "which recordings were skipped" was unanswerable |
+| Folder mirroring applied to every source | `source_ref` for a memo is a filename, so all 96 transcripts were buried in their own directory named after the `.m4a` |
+| Annotations only stripped in `[brackets]` | whisper also uses `(upbeat music)` and `♪ lyrics ♪`, so those became note titles |
+| No change stamp stored | The already-imported prefilter could never match, so every hourly run re-transcribed the whole library |
+| `relocate` left empty directories, and pruned only when it had moved something | Husks from an earlier run were unreachable forever |
+
+**The rule that emerged is the same one triage arrived at.** The first filter
+asked "does this contain speech" — which would have discarded a deliberate 2019
+foley session (`keys`, `locks`, `wipers`, `slam door`, `honk`, `blinker`)
+because whisper hears door slams rather than words, and a set of musical
+sketches (`Sick chords`, `cm7-bm7`, `uke`, `bape nasty freestyle`).
+
+The rule that works is **"did the owner name it"** — a test of *form*, not of
+value. A recording someone bothered to name is a deliberate capture whether or
+not anyone spoke in it. 47 recordings were kept on that basis; the 23 still
+skipped are uniformly `New Recording 15` / `Nueva grabación 6` with silence in
+them.
+
+This is the third time the same distinction has decided a design: classify by
+form and it holds; classify by value and it fails. See the triage section
+above, and Principle 13 below.
 
 ---
 

@@ -108,6 +108,11 @@ _SOUND_WORDS = (
     "coughs", "coughing", "chuckles", "singing", "sings", "humming", "noise",
     "static", "beeping", "ringing", "footsteps", "indistinct", "inaudible",
     "chatter", "wind", "engine", "clicking", "banging", "breathing",
+    # Added after real recordings produced them: a foley session generates
+    # vocabulary no amount of guessing would have covered.
+    "bell", "bells", "dings", "dinging", "knocking", "knocks", "crunching",
+    "slams", "slamming", "rustling", "typing", "beep", "buzzing", "clattering",
+    "door", "keyboard", "clicks", "whirring", "tapping", "thud", "creaking",
 )
 _PAREN = re.compile(r"\(([^)]{0,60})\)")
 
@@ -125,7 +130,10 @@ def _is_sound_description(inner: str) -> bool:
 
 
 def strip_non_speech(text: str) -> str:
-    cleaned = _NON_SPEECH.sub(" ", text or "")
+    # whisper brackets sung lyrics with ♪. The words between them are real
+    # content; the markers are decoration and make terrible note titles.
+    cleaned = (text or "").replace("\u266a", " ").replace("\u266b", " ")
+    cleaned = _NON_SPEECH.sub(" ", cleaned)
     cleaned = _PAREN.sub(
         lambda m: " " if _is_sound_description(m.group(1)) else m.group(0), cleaned)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
