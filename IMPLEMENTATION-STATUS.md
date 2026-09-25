@@ -21,7 +21,7 @@ yet, and that is the next real question.
 | 3 — Scheduler + failure surface | **done** | Hourly launchd agent, `flock`, three-tier failure surfacing |
 | — Live with it for a week | **done, involuntarily** | Six weeks and 352 unattended runs between Aug 10 and Sep 21. The corpus the plan said to wait for now exists |
 | 4 — Voice Memos | **done** | 158 recordings, 2015–2026. 83 transcripts, 47 audio notes, 23 skipped. Full Disk Access granted; runs hourly with Notes |
-| 5 — iOS inbox + `Compost` shortcut | not started | Blocked on Full Disk Access |
+| 5 — iOS inbox + `Compost` shortcut | **Mac side done** | `ios_inbox.py` + dependency-free EXIF reader, 14 tests. Waiting on the Shortcut being built on the phone — see docs/COMPOST-SHORTCUT.md |
 | 6 — Backfill existing notes | not started | Verb exists and refuses by design |
 | 7 — Retrieval | not started | Gated on a populated corpus, which now exists |
 | 8 — Read-later queue | not started | Gated on retrieval |

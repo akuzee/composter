@@ -80,7 +80,14 @@ def build_sources(cfg: Config) -> dict[str, Source]:
             transcripts_dir=cfg.transcripts_dir,
             max_minutes_per_run=int(voice.options.get("max_minutes_per_run", 30)),
             **kw)
-    # ios joins here in Phase 5.
+    ios = cfg.sources.get("ios")
+    if ios and ios.enabled:
+        from .sources.ios_inbox import IosInboxSource
+        kw = {}
+        if ios.options.get("inbox_dir"):
+            kw["root"] = Path(str(ios.options["inbox_dir"])).expanduser()
+        out["ios"] = IosInboxSource(
+            quiet_seconds=int(ios.options.get("quiet_seconds", 30)), **kw)
     return out
 
 
@@ -381,6 +388,15 @@ def run_pull(cfg: Config, db: DB, source_name: str, limit: int | None = None,
     finally:
         if run_id is not None:
             db.finish_run(run_id, iso(default_now()), ok, counts, "; ".join(notes) or None)
+
+    # Sweep consumed sidecars out of the inbox so it empties on the phone.
+    # Moved, never deleted — a bug must not be able to destroy a capture.
+    if ok and not dry_run and hasattr(source, "mark_ingested"):
+        done = {c.source_id for c in captures
+                if db.get_item(c.source, c.source_id)
+                and db.get_item(c.source, c.source_id).state != "error"}
+        if done:
+            counts["ingested"] = source.mark_ingested(done)
 
     counts["ok"] = ok
     counts["dry_run"] = dry_run

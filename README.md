@@ -133,8 +133,22 @@ that running it from a shell tests the *shell's* grant, not the bundle's.
   `sources.voice.model` at `ggml-large-v3-turbo-q5_0.bin` (~550 MB) to clean up
   the mangled words.
 
-- **ios** (Phase 5, not built): a `Compost` share-sheet shortcut writing JSON
-  plus files to an iCloud folder, swept by the Mac. Also needs Full Disk Access.
+- **ios-share** (Phase 5, built; needs Full Disk Access): the `Compost`
+  share-sheet shortcut writes a JSON sidecar plus any files to
+  `iCloud Drive/Composter Inbox/`; the Mac sweeps it. **The phone never writes
+  into the vault** — the Mac stays the single writer, because two writers into
+  one synced tree manufacture exactly the conflicts the fence logic exists to
+  prevent.
+
+  The sidecar carries structured JSON rather than rendered markdown, so
+  formatting lives in `vault.py` instead of being maintained in Shortcuts'
+  template editor. A photo's **EXIF capture date becomes `created`** — that is
+  unrecoverable once a photo leaves the camera roll, so it happens at import or
+  not at all. Consumed sidecars are **moved** to `_ingested/<YYYY-MM>/`, never
+  deleted, so a bug cannot destroy a capture and an empty-looking inbox is its
+  own health signal.
+
+  See [docs/COMPOST-SHORTCUT.md](docs/COMPOST-SHORTCUT.md) to build it.
 
 ## Triage — deciding what is compost and what is trash
 

@@ -63,4 +63,8 @@ sources:
     enabled: false
     max_minutes_per_run: 30
   ios:
+    # The Compost shortcut writes JSON sidecars + files here; the Mac sweeps
+    # them. The phone never writes into the vault — one writer only.
     enabled: false
+    quiet_seconds: 30
+    # inbox_dir: ~/Library/Mobile Documents/com~apple~CloudDocs/Composter Inbox
