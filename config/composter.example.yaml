@@ -26,7 +26,12 @@ writer:
   dismiss_after_runs: 3
   dismiss_after_seconds: 3600
   # Anything heavier than this goes to media_dir, referenced not embedded.
-  max_inline_mb: 25
+  # Audio/media larger than this is referenced rather than copied into the
+  # vault. Set it high enough that every recording's audio sits with its
+  # transcript — on this library 156 of 158 recordings were under 15 MB, so a
+  # 25 MB limit excluded exactly two files and bought nothing. Lower it if
+  # phone sync or Obsidian Sync quota becomes a problem.
+  max_inline_mb: 100
 
 media_dir: ~/Media/composter
 
