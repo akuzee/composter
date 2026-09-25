@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import sys
+import shutil
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -689,9 +691,108 @@ def cmd_relocate(args) -> int:
 
 
 def cmd_backfill(args) -> int:
-    print("backfill is Phase 6: hand-invoked, snapshot-first, and not implemented yet. "
-          "Refusing by design.", file=sys.stderr)
-    return 1
+    """The one operation that writes outside the managed folder (plan §11).
+
+    Hand-invoked only: never scheduled, never a side effect. `all` does not
+    call it, and neither does anything else.
+    """
+    from . import backfill as bf
+    cfg = load_config(args.config)
+    cfg.ensure_state_dirs()
+    tsv = cfg.state_dir / bf.TSV_NAME
+
+    if args.propose:
+        rows = bf.propose(cfg, tsv)
+        by_conf = {}
+        for r in rows:
+            by_conf[r.confidence] = by_conf.get(r.confidence, 0) + 1
+        print(f"{len(rows)} notes need frontmatter -> {tsv}")
+        for c in ("high", "medium", "low"):
+            if by_conf.get(c):
+                print(f"  {c:6} confidence: {by_conf[c]}")
+        print(f"  authorship 'theirs': "
+              f"{sum(1 for r in rows if r.authorship == 'theirs')}")
+        print("\nNothing was written to the vault. Edit the TSV — clear the "
+              "`created` column\nfor any date you do not trust, an absent field "
+              "is honest and a wrong one\nis not — then run `backfill --apply "
+              "--dry-run`.")
+        return 0
+
+    if args.undo:
+        snaps = sorted(bf.SNAPSHOT_ROOT.glob("vault-pre-backfill-*"))
+        if not snaps:
+            print("no snapshot found", file=sys.stderr)
+            return 1
+        snap = snaps[-1]
+        print(f"restoring markdown from {snap}")
+        n = 0
+        for src_file in snap.rglob("*.md"):
+            rel = src_file.relative_to(snap)
+            if rel.parts[0] in bf.SKIP_DIRS or rel.parts[0] == cfg.managed_dir:
+                continue
+            dest = cfg.vault_root / rel
+            if dest.is_file() and dest.read_bytes() != src_file.read_bytes():
+                if not args.dry_run:
+                    shutil.copy2(src_file, dest)
+                n += 1
+        print(f"{'would restore' if args.dry_run else 'restored'}: {n} files")
+        return 0
+
+    if not args.apply:
+        print("one of --propose | --apply | --undo is required", file=sys.stderr)
+        return 1
+
+    # -- apply ---------------------------------------------------------------
+    if not tsv.is_file():
+        print(f"no proposal at {tsv}; run `backfill --propose` first", file=sys.stderr)
+        return 1
+    rows = bf.read_proposal(tsv)
+
+    if not args.dry_run:
+        # Safeguard 1: the rollback must exist before a byte is written.
+        snap, count, size = bf.snapshot(cfg)
+        print(f"snapshot: {snap}  ({count} files, {size/1e6:.1f} MB)")
+        problems = bf.verify_snapshot(cfg, snap)
+        if problems:
+            for p_ in problems[:10]:
+                print(f"  {p_}", file=sys.stderr)
+            print("snapshot verification FAILED — nothing written", file=sys.stderr)
+            return 2
+
+    captured = iso(default_now())
+    changed = skipped = failed = 0
+    for i, row in enumerate(rows):
+        path = cfg.vault_root / row.relpath
+        if not path.is_file():
+            skipped += 1
+            continue
+        try:
+            before, after = bf.apply_one(path, row, captured)
+        except (ValueError, AssertionError) as e:
+            print(f"  SKIP {row.relpath}: {e}", file=sys.stderr)
+            failed += 1
+            continue
+        if args.dry_run:
+            if changed < args.show:
+                diff = difflib.unified_diff(
+                    before.splitlines(True)[:3], after.splitlines(True)[:10],
+                    fromfile=row.relpath, tofile=row.relpath + " (after)")
+                print("".join(diff), end="")
+            changed += 1
+            continue
+        path.write_text(after, encoding="utf-8")
+        changed += 1
+        # Safeguard 5: batched, so an interrupted run leaves a known state.
+        if changed % args.batch == 0:
+            print(f"  ... {changed}/{len(rows)}")
+
+    verb = "would change" if args.dry_run else "changed"
+    print(f"\n{verb}: {changed}   skipped (missing): {skipped}   refused: {failed}")
+    if args.dry_run:
+        print("dry run — nothing written. Re-run without --dry-run to apply.")
+    else:
+        print("Re-baseline the isolation check: `isolation --capture --force`")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -740,11 +841,17 @@ def main(argv=None) -> int:
                    help="required for a real move; see the warning about wikilinks")
     p.set_defaults(func=cmd_relocate)
 
-    p = sub.add_parser("backfill")
-    p.add_argument("--propose", action="store_true")
-    p.add_argument("--apply", action="store_true")
-    p.add_argument("--undo", action="store_true")
+    p = sub.add_parser("backfill", help="Phase 6: frontmatter for pre-existing notes. "
+                                        "The ONLY command that writes outside the "
+                                        "managed folder. Hand-invoked only.")
+    p.add_argument("--propose", action="store_true",
+                   help="write a TSV of inferred values + evidence; writes nothing else")
+    p.add_argument("--apply", action="store_true",
+                   help="read the TSV (never re-infers) and write frontmatter")
+    p.add_argument("--undo", action="store_true", help="restore markdown from the snapshot")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--batch", type=int, default=20, help="progress every N files")
+    p.add_argument("--show", type=int, default=5, help="diffs to print in a dry run")
     p.set_defaults(func=cmd_backfill)
 
     sub.add_parser("all").set_defaults(func=cmd_all)
