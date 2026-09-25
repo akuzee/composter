@@ -218,13 +218,39 @@ note's own words* — §10.1 already argues that excerpt is what keeps search fr
 feeling like a black box, and under this principle it is not a nicety but the
 whole shape of the interface.
 
-**What this demotes.** Two things, both already in the backlog and both now
-constrained rather than merely deferred:
+**Amendment, 2026-09-25: steerable labels are fine.** The original wording
+ruled out generated labels entirely, which overshoots. What makes a label bad
+is not that a machine proposed it — it is **being stuck with it**. A label you
+can correct is a draft; the tool proposes, the owner disposes, and the meaning
+stays the owner's.
 
-- *Auto-tagging / automatic Zettelkasten sorting.* A generated tag is an
-  assertion about meaning. Even done well it pre-empts the connection-making
-  this principle reserves for the owner. If it is ever built, it belongs as an
-  invisible retrieval-time aid, never as a label presented as truth.
+Crucially, the correction happens **after** the labels exist, not before.
+Reviewing a labelling pass up front is a batch chore (Principle 7), and nobody
+does it. The workflow is: labels appear automatically; when one is wrong you
+say so; the next pass honours that. Corrections accumulate in a small
+vocabulary file the owner owns — rename a label and it is renamed everywhere,
+delete one and it never returns, merge two and they stay merged. The
+*vocabulary* becomes the owner's; only the *assignment* is the machine's.
+
+Three properties make this safe, and all three are required:
+
+1. **Labels live in the disposable index, never written into the markdown.** A
+   label that can be recomputed is never stale; one frozen into a file rots
+   exactly as a hand-kept tag does (Principle 8).
+2. **Corrections are durable and cheap.** One line in a vocabulary file, not a
+   re-labelling session.
+3. **Regeneration is non-destructive.** Delete the index, re-run, corrections
+   survive.
+
+What remains ruled out: labels frozen into files that must be fought to
+change, and machine-written prose *about* the notes, which is not a label at
+all but an interpretation.
+
+**What this demotes.**
+
+- *Auto-tagging / automatic Zettelkasten sorting.* Permitted under the
+  amendment above, and only under it: generated at index time, correctable
+  after the fact, never written into the files.
 - *The accumulating interpretation layer* (plan §10.1 digests). The plan
   already hedged here — "the part most likely to produce beautiful-sounding
   nothing... generate one by hand and read it before building any scheduler

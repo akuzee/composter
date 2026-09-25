@@ -191,11 +191,22 @@ that what feels missing is not tags but the **interpretation layer**: dated,
 cited digest notes, which the plan already specifies and which compound over
 time instead of claiming to be permanently true.
 
-**Constrained by Principle 13** ("the owner makes the meaning", added
-2026-09-21 — see IMPLEMENTATION-STATUS.md). A generated tag is an assertion
-about meaning, and the connection-making is the part worth doing oneself. If
-this is ever built it belongs as an invisible retrieval-time aid — something
-that helps the right notes surface — never as a label presented as truth.
+**Shape settled 2026-09-25 (Principle 13 amendment).** Labels are generated
+automatically with **no review step** — reviewing a labelling pass up front is
+a batch chore and would not get done. Correction happens afterwards, when a
+label actually annoys you:
+
+- *"this label is wrong here"* → the note is pinned out of it
+- *"rename this label"* → renamed everywhere, permanently
+- *"drop this label"* → never generated again
+- *"these two are the same"* → merged
+
+Those corrections live in a small vocabulary file the owner owns, and every
+later pass honours them. The vocabulary becomes the owner's; only the
+assignment stays the machine's. Labels are computed at index time and **never
+written into the markdown**, so they cannot rot — a label that can be
+recomputed is never stale. Regeneration is non-destructive: delete the index,
+re-run, corrections survive.
 
 **Sequencing.** After Phase 7. It cannot be evaluated before then, because the
 whole question is what retrieval leaves wanting. Related:
