@@ -201,12 +201,41 @@ label actually annoys you:
 - *"drop this label"* → never generated again
 - *"these two are the same"* → merged
 
-Those corrections live in a small vocabulary file the owner owns, and every
-later pass honours them. The vocabulary becomes the owner's; only the
+**The important feedback is qualitative, and structured edits alone are too
+thin.** What usually needs saying is not "this label has the wrong name" but
+*"you are applying this wrong"*. So each label carries a **note in the owner's
+own words**, and the labelling pass reads those notes as instructions:
+
+```yaml
+- label: career anxiety
+  was: ambition
+  note: "worry about trajectory and status — NOT concrete plans or applications"
+
+- label: productivity
+  drop: true
+  why: "matched everything, meant nothing"
+
+- label: leaving
+  note: "physical departures and the feeling around them, not career transitions"
+  not: ["moving-apartment logistics"]
+```
+
+The file belongs at **`zCompost/_labels.md`**, not in a config directory — it
+is edited in Obsidian, beside the notes it describes, at the moment a label
+irritates you.
+
+Those corrections live in that file, which the owner owns, and every later
+pass honours them. The vocabulary becomes the owner's; only the
 assignment stays the machine's. Labels are computed at index time and **never
 written into the markdown**, so they cannot rot — a label that can be
 recomputed is never stale. Regeneration is non-destructive: delete the index,
 re-run, corrections survive.
+
+**Why it cannot be built yet.** Labels live in the index, and there is no
+index — Smart Connections keeps its own vectors and has nowhere to put a label.
+Building the labeller now would produce a `state/labels.json` nothing can read,
+which is worse than not building it: the design would calcify before anything
+had tested it. It needs the retrieval layer to have a surface to appear on.
 
 **Sequencing.** After Phase 7. It cannot be evaluated before then, because the
 whole question is what retrieval leaves wanting. Related:
